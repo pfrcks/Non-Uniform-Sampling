@@ -180,11 +180,16 @@ def train(x, y, ret_all_losses=False):
             all_losses = all_losses.data.numpy()
 
     loss = F.nll_loss(output, target)
-    val_loss = loss.data[0]
-    if idx % 10 == 0:
+    val_loss = loss.data[0]/x.shape[0]
+    if step % 10 == 0:
         pred = output.data.max(1, keepdim=True)[1]
-        correct = pred.eq(target.data.view_as(pred)).cpu().sum()
-        print('\n train set loss: ', val_loss/x.shape[0], correct/float(x.shape[0]))
+        correct = pred.eq(target.data.view_as(pred)).cpu().sum()/float(x.shape[0])
+        info = {
+            'loss': val_loss,
+            'accuracy': correct
+        }
+        for tag, value in info.items():
+            logger.scalar_summary(tag, value, step/10)
 
     loss.backward()
     optimizer.step()
