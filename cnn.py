@@ -45,7 +45,7 @@ args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 logger = Logger('./logs')
-
+np.random.seed(0)
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
@@ -56,8 +56,10 @@ step = 0
 reshape_size = 0
 if args.dataset == 'mnist':
     reshape_size = F_mnist * H_mnist * W_mnist
-else:
+elif args.dataset == 'cifar':
     reshape_size = F_cifar * H_cifar * W_cifar
+elif args.dataset == 'sine':
+    pass
 
 def read_mnist(filename):
     with open(filename, 'rb') as f:
