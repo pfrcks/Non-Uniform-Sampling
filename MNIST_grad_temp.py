@@ -1,5 +1,4 @@
 from __future__ import print_function
-from logger import Logger
 import argparse
 import torch
 import sys
@@ -15,6 +14,7 @@ from datetime import datetime
 from multiprocessing.dummy import  Pool as ThreadPool
 import matplotlib
 matplotlib.use('Agg')
+import seaborn as sns
 
 import matplotlib.pyplot as plt
 import multiprocessing
@@ -68,7 +68,6 @@ test_loader = torch.utils.data.DataLoader(
                    ])),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
-logger = Logger('./logs')
 
 class Net(nn.Module):
     def __init__(self):
@@ -95,6 +94,23 @@ if args.cuda:
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
 
+# def model_loss(x_train, y_train):
+#     x_train = torch.from_numpy(x_train).type(torch.FloatTensor)
+#     y_train = torch.from_numpy(y_train).type(torch.LongTensor)
+#     if args.cuda:
+#         data, target = x_train.cuda(), y_train.cuda()
+#     else:
+#         data, target = x_train, y_train
+#     data, target = Variable(data), Variable(target)
+#     optimizer.zero_grad()
+#     output = model(data)
+#     loss = F.cross_entropy(output, target, reduce=False)
+#     losses = loss.cpu().data.numpy()
+#     # losses = np.zeros(x_train.shape[0])
+#     loss = F.nll_loss(output, target)
+#
+#     return loss
+
 
 def train2(x_train, y_train):
     model.train()
@@ -118,8 +134,28 @@ def train2(x_train, y_train):
     # print(loss.data)
     return val_loss
 
+# def train(x_train, y_train):
+    # model.train()
+    # for batch_idx, (data, target) in enumerate(train_loader):
+        # if args.cuda:
+            # data, target = data.cuda(), target.cuda()
+        # data, target = Variable(data), Variable(target)
+        # optimizer.zero_grad()
+        # output = model(data)
+        # # criterion = nn.CrossEntropyLoss()
+        # loss = F.cross_entropy(output, target, reduce=False)
+        # # loss = criterion(output, target, reduce=False)
+        # losses[batch_idx*args.batch_size:(batch_idx+1)*args.batch_size] = loss.data.numpy()
+        # loss = loss.sum()
+        # loss.backward()
+        # optimizer.step()
+        # if batch_idx % args.log_interval == 0:
+            # print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                # epoch, batch_idx * len(data), len(train_loader.dataset),
+                # 100. * batch_idx / len(train_loader), loss.data[0]))
 
-def test2(x_test, y_test, step=0):
+
+def test2(x_test, y_test):
     model.eval()
     test_loss = 0
     correct = 0
@@ -135,15 +171,27 @@ def test2(x_test, y_test, step=0):
     pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
     correct += pred.eq(target.data.view_as(pred)).cpu().sum()
     test_loss /= 10000
-    info = {
-        'loss' : test_loss,
-        'accuracy' : float(correct) /10000
-    }
-    for tag, value in info.items():
-        logger.scalar_summary(tag, value, step)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f}%)\n'.format(
         test_loss, correct, 10000,
         100. * correct / 10000))
+
+# def test():
+    # model.eval()
+    # test_loss = 0
+    # correct = 0
+    # for data, target in test_loader:
+        # if args.cuda:
+            # data, target = data.cuda(), target.cuda()
+        # data, target = Variable(data, volatile=True), Variable(target)
+        # output = model(data)
+        # test_loss += F.nll_loss(output, target, size_average=False).data[0] # sum up batch loss
+        # pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+        # correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+    # test_loss /= len(test_loader.dataset)
+    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        # test_loss, correct, len(test_loader.dataset),
+        # 100. * correct / len(test_loader.dataset)))
 
 
 def parallel_fun(data, target, i):
@@ -173,6 +221,13 @@ def weight_grads(x_train, y_train):
     data, target = Variable(data), Variable(target)
 
     grads = np.zeros((N,))
+
+    # loss = F.cross_entropy(output, target, reduce=False)
+    # losses = loss.cpu().data.numpy()
+
+    # loss = F.nll_loss(output, target)
+    # loss.backward()
+    # optimizer.step()
 
     num_cores = multiprocessing.cpu_count()
     print(num_cores)
@@ -252,8 +307,8 @@ for epoch in range(25):
         # loss_batch = train2(x_train, y_train)
         # losses[:, 0][:64] = loss_batch
     uniform.append(uniform_epoch)
-    # print('Uniform Train Loss Mean', np.mean(uniform_epoch))
-    test2(x_test, y_test)
+    print('Uniform Train Loss Mean', np.mean(uniform_epoch))
+    # test2(x_test, y_test)
 
 uniform = np.array(uniform)
 uniform = np.mean(uniform, axis=0)
@@ -278,8 +333,8 @@ for epoch in range(3):
         # loss_batch = train2(x_train, y_train)
         # losses[:, 0][:64] = loss_batch
     non_uniform.append(non_uniform_epoch)
-    # print('Non Uniform Train Loss Mean', np.mean(non_uniform_epoch))
-    test2(x_test, y_test, epoch+1)
+    print('Non Uniform Train Loss Mean', np.mean(non_uniform_epoch))
+    # test2(x_test, y_test)
 
 losses = weight_grads(x_train, y_train)
 losses = losses.reshape(losses.shape[0], 1)
@@ -307,8 +362,8 @@ for epoch in range(22):
     plt.scatter(range(n),count)
     plt.savefig('count'+str(epoch)+'.png')
     non_uniform.append(non_uniform_epoch)
-    # print('Non Uniform Train Loss Mean', np.mean(non_uniform_epoch))
-    test2(x_test, y_test, epoch+1)
+    print('Non Uniform Train Loss Mean', np.mean(non_uniform_epoch))
+    # test2(x_test, y_test)
 
 non_uniform = np.array(non_uniform)
 non_uniform = np.mean(non_uniform, axis=0)
