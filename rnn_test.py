@@ -17,9 +17,10 @@ import matplotlib.pyplot as plt
 import multiprocessing
 from joblib import Parallel, delayed
 from logger import Logger
+from sklearn.cross_validation import train_test_split
 
 # Training settings
-parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+parser = argparse.ArgumentParser(description='RNN')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -39,6 +40,8 @@ parser.add_argument('--dataset', type=str, default='mnist', metavar='D',
                     help='Which dataset to use: mnist or cifar')
 parser.add_argument('--sample-type', type=str, default='grad', metavar='T',
                     help='Which sampling type to use: grad or obj or var or lev')
+parser.add_argument('--cross-val', action='store_true', default=False,
+                    help='Perform cross validation')
 args = parser.parse_args()
 
 
@@ -137,8 +140,8 @@ def load_dataset(type, path='../data'):
         y_train = data[test:, 1:]
         x_test = data[:test, :-1]
         y_test = data[:test, 1:]
-
-    return x_train, y_train, x_test, y_test
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
+    return x_train, y_train, x_test, y_test, x_val, y_val
 
 def to_np(x):
     out = x.data
@@ -264,9 +267,9 @@ def test(x, y):
     output = model(data, future=future)
     test_loss = F.mse_loss(output[:, :-future], target, size_average=False)
     if args.cuda:
-        print(test_loss.cpu().data.numpy()[0]/float(x.shape[0]))
+        return test_loss.cpu().data.numpy()[0]/float(x.shape[0])
     else:
-        print(test_loss.data.numpy()[0]/float(x.shape[0]))
+        return test_loss.data.numpy()[0]/float(x.shape[0])
     # test_loss /= x_test.shape[0]
     # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f}%)\n'.format(
         # test_loss, correct, x_test.shape[0],
@@ -368,7 +371,7 @@ elif args.dataset == 'sine':
 if args.cuda:
     model.cuda()
 
-x_train, y_train, x_test, y_test = load_dataset(args.dataset)
+x_train, y_train, x_test, y_test, x_val, y_val = load_dataset(args.dataset)
 n = x_train.shape[0]
 x_train = x_train[:n]
 y_train = y_train[:n]
@@ -380,7 +383,6 @@ if args.sample_type == 'grad':
         uniform_sampling(x_train, y_train)
         test(x_test, y_test)
     weights = gradients(x_train, y_train)
-    print(weights.shape)
     weights = weights.reshape(weights.shape[0], 1)
     weights = np.column_stack([weights, range(weights.shape[0])])
     prob = args.batch_size * (weights[:, 0] / np.sum(weights[:, 0]))

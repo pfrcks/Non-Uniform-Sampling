@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import multiprocessing
 from joblib import Parallel, delayed
 from logger import Logger
+from sklearn.cross_validation import train_test_split
 
 # Training settings
 parser = argparse.ArgumentParser(description='Fully Connected Network')
@@ -39,6 +40,8 @@ parser.add_argument('--dataset', type=str, default='mnist', metavar='D',
                     help='Which dataset to use: mnist or cifar')
 parser.add_argument('--sample-type', type=str, default='grad', metavar='T',
                     help='Which sampling type to use: grad or obj or var or lev')
+parser.add_argument('--cross-val', action='store_true', default=False,
+                    help='Perform cross validation')
 args = parser.parse_args()
 
 
@@ -95,6 +98,7 @@ def load_dataset(type, path='../data'):
 
         x_train = x_train.reshape(Ntr, F, H, W)
         x_test = x_test.reshape(Nte, F, H, W)
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
 
     elif type == 'cifar':
         F, H, W = 3, 32, 32
@@ -117,7 +121,9 @@ def load_dataset(type, path='../data'):
         x_train = (x_train - mean) / std
         x_test = (x_test - mean) / std
 
-    return x_train, y_train, x_test, y_test
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
+
+    return x_train, y_train, x_test, y_test, x_val, y_val
 
 def to_np(x):
     out = x.data
@@ -209,10 +215,11 @@ def test(x, y):
     test_loss += F.nll_loss(output, target, size_average=False).data[0]
     pred = output.data.max(1, keepdim=True)[1]
     correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-    test_loss /= x_test.shape[0]
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f}%)\n'.format(
-        test_loss, correct, x_test.shape[0],
-        100. * correct / x_test.shape[0]))
+    test_loss /= x.shape[0]
+    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f}%)\n'.format(
+        # test_loss, correct, x_test.shape[0],
+        # 100. * correct / x_test.shape[0]))
+    return [test_loss, correct / float(x.shape[0])]
 
 def bernoulli_sample(score, sample_size):
     sel = np.random.binomial(1, prob)
@@ -307,7 +314,7 @@ elif args.dataset == 'cifar':
 if args.cuda:
     model.cuda()
 
-x_train, y_train, x_test, y_test = load_dataset(args.dataset)
+x_train, y_train, x_test, y_test, x_val, y_val = load_dataset(args.dataset)
 n = x_train.shape[0]
 x_train = x_train[:n]
 y_train = y_train[:n]

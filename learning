@@ -1,0 +1,7 @@
+model dataset uni var obj grad
+
+cnn mnist 0.001 0.001 0.000464 0.000215
+    cifar 0.001 0.001 0.000464 0.001
+
+fc mnist  0.001 4.641e-5 4.641e-5 2.154e-5
+   cifar  0.0001 4.641e-5 4.641e-5 4.641e-5	

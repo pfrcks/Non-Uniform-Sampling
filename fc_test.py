@@ -17,9 +17,10 @@ import matplotlib.pyplot as plt
 import multiprocessing
 from joblib import Parallel, delayed
 from logger import Logger
+from sklearn.cross_validation import train_test_split
 
 # Training settings
-parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+parser = argparse.ArgumentParser(description='Fully Connected Network')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -39,6 +40,8 @@ parser.add_argument('--dataset', type=str, default='mnist', metavar='D',
                     help='Which dataset to use: mnist or cifar')
 parser.add_argument('--sample-type', type=str, default='grad', metavar='T',
                     help='Which sampling type to use: grad or obj or var or lev')
+parser.add_argument('--cross-val', action='store_true', default=False,
+                    help='Perform cross validation')
 args = parser.parse_args()
 
 
@@ -82,14 +85,6 @@ def read_cifar(path):
 
     return x_train, y_train, x_test, y_test
 
-def read_sine(path, test=1000):
-    data = torch.load('traindata.pt')
-    x_train = data[test:, :-1]
-    y_train = data[test:, 1:]
-    x_test = data[:test, :-1]
-    y_test = data[:test, 1:]
-    return x_train, y_train, x_test, y_test
-
 def load_dataset(type, path='../data'):
     x_train = x_test = y_train = y_test = None
     if type == 'mnist':
@@ -103,6 +98,7 @@ def load_dataset(type, path='../data'):
 
         x_train = x_train.reshape(Ntr, F, H, W)
         x_test = x_test.reshape(Nte, F, H, W)
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
 
     elif type == 'cifar':
         F, H, W = 3, 32, 32
@@ -124,21 +120,10 @@ def load_dataset(type, path='../data'):
                      mean=mean, std=std)
         x_train = (x_train - mean) / std
         x_test = (x_test - mean) / std
-    elif type == 'sine':
-        T = 20
-        L = 1000
-        N = 500
-        test = 100
 
-        x = np.empty((N, L), 'int64')
-        x[:] = np.array(range(L)) + np.random.randint(-4 * T, 4 * T, N).reshape(N, 1)
-        data = np.sin(x / 1.0 / T).astype('float64')
-        x_train = data[test:, :-1]
-        y_train = data[test:, 1:]
-        x_test = data[:test, :-1]
-        y_test = data[:test, 1:]
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, random_state=42)
 
-    return x_train, y_train, x_test, y_test
+    return x_train, y_train, x_test, y_test, x_val, y_val
 
 def to_np(x):
     out = x.data
@@ -153,10 +138,7 @@ def to_var(x, volatile=False):
 
 def torch_data(x, y):
     x = torch.from_numpy(x).type(torch.FloatTensor)
-    if args.dataset == 'sine':
-        y = torch.from_numpy(y).type(torch.FloatTensor)
-    else:
-        y = torch.from_numpy(y).type(torch.LongTensor)
+    y = torch.from_numpy(y).type(torch.LongTensor)
 
     return x, y
 
@@ -164,73 +146,31 @@ def torch_data(x, y):
 class MNIST_Net(nn.Module):
     def __init__(self):
         super(MNIST_Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+        self.fc1 = nn.Linear(784, 500)
+        self.fc2 = nn.Linear(500, 50)
+        self.fc3 = nn.Linear(50, 10)
 
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
+        x = x.view(-1, 784)
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
         return F.log_softmax(x)
 
 
 class CIFAR_Net(nn.Module):
     def __init__(self):
         super(CIFAR_Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(500, 50)
-        self.fc2 = nn.Linear(50, 10)
+        self.fc1 = nn.Linear(3072, 500)
+        self.fc2 = nn.Linear(500, 50)
+        self.fc3 = nn.Linear(50, 10)
 
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 500)
+        x = x.view(-1, 3072)
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
         return F.log_softmax(x)
-
-
-class Sequence(nn.Module):
-    def __init__(self):
-        super(Sequence, self).__init__()
-        self.lstm1 = nn.LSTMCell(1, 51)
-        self.lstm2 = nn.LSTMCell(51, 51)
-        self.linear = nn.Linear(51, 1)
-
-    def forward(self, input, future=0):
-        outputs = []
-        if args.cuda:
-            h_t = Variable(torch.zeros(input.size(0), 51), requires_grad=False).cuda()
-            c_t = Variable(torch.zeros(input.size(0), 51), requires_grad=False).cuda()
-            h_t2 = Variable(torch.zeros(input.size(0), 51), requires_grad=False).cuda()
-            c_t2 = Variable(torch.zeros(input.size(0), 51), requires_grad=False).cuda()
-        else:
-            h_t = Variable(torch.zeros(input.size(0), 51), requires_grad=False)
-            c_t = Variable(torch.zeros(input.size(0), 51), requires_grad=False)
-            h_t2 = Variable(torch.zeros(input.size(0), 51), requires_grad=False)
-            c_t2 = Variable(torch.zeros(input.size(0), 51), requires_grad=False)
-
-        for i, input_t in enumerate(input.chunk(input.size(1), dim=1)):
-            h_t, c_t = self.lstm1(input_t, (h_t, c_t))
-            h_t2, c_t2 = self.lstm2(h_t, (h_t2, c_t2))
-            output = self.linear(h_t2)
-            outputs += [output]
-        for i in range(future):  # if we should predict the future
-            h_t, c_t = self.lstm1(output, (h_t, c_t))
-            h_t2, c_t2 = self.lstm2(h_t, (h_t2, c_t2))
-            output = self.linear(h_t2)
-            outputs += [output]
-        outputs = torch.stack(outputs, 1).squeeze(2)
-        return outputs
 
 def train(x, y, ret_all_losses=False):
     model.train()
@@ -241,14 +181,24 @@ def train(x, y, ret_all_losses=False):
 
     all_losses = None
     if ret_all_losses:
-        all_losses = F.mse_loss(output, target, reduce=False)
+        all_losses = F.nll_loss(output, target, reduce=False)
         if args.cuda:
             all_losses = all_losses.cpu().data.numpy()
         else:
             all_losses = all_losses.data.numpy()
 
-    loss = F.mse_loss(output, target)
+    loss = F.nll_loss(output, target)
     val_loss = loss.data[0]/x.shape[0]
+    if step % 10 == 0:
+        pred = output.data.max(1, keepdim=True)[1]
+        correct = pred.eq(target.data.view_as(pred)).cpu().sum()/float(x.shape[0])
+        info = {
+            'loss': val_loss,
+            'accuracy': correct
+        }
+        for tag, value in info.items():
+            logger.scalar_summary(tag, value, step/10)
+
     loss.backward()
     optimizer.step()
     return val_loss, all_losses
@@ -256,21 +206,20 @@ def train(x, y, ret_all_losses=False):
 def test(x, y):
     model.eval()
     test_loss = 0
+    correct = 0
 
     x, y = torch_data(x, y)
     data, target = to_var(x, volatile=True), to_var(y, volatile=True)
 
-    future = 1000
-    output = model(data, future=future)
-    test_loss = F.mse_loss(output[:, :-future], target, size_average=False)
-    if args.cuda:
-        print(test_loss.cpu().data.numpy()[0]/float(x.shape[0]))
-    else:
-        print(test_loss.data.numpy()[0]/float(x.shape[0]))
-    # test_loss /= x_test.shape[0]
+    output = model(data)
+    test_loss += F.nll_loss(output, target, size_average=False).data[0]
+    pred = output.data.max(1, keepdim=True)[1]
+    correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+    test_loss /= x.shape[0]
     # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.4f}%)\n'.format(
         # test_loss, correct, x_test.shape[0],
         # 100. * correct / x_test.shape[0]))
+    return [test_loss, correct / float(x.shape[0])]
 
 def bernoulli_sample(score, sample_size):
     sel = np.random.binomial(1, prob)
@@ -278,14 +227,14 @@ def bernoulli_sample(score, sample_size):
 
 
 def gradients(x, y):
-    n, f = x.shape
+    n, f, h, w = x.shape
     x, y = torch_data(x, y)
     data, target = to_var(x), to_var(y)
 
     weight_grads = np.zeros((n,))
     for i in np.arange(n):
-        output = model(data[i].view(-1, f))
-        loss = F.mse_loss(output, target[i])
+        output = model(data[i].view(-1, f, h, w))
+        loss = F.nll_loss(output, target[i])
         loss.backward()
 
         model_params = list(model.parameters())
@@ -352,35 +301,96 @@ def objective_sampling(x, y, losses):
         idx = losses[:, 1][:size]
         idx = idx.astype(int)
         loss, loss_batch = train(x[idx], y[idx], ret_all_losses=True)
-        loss_batch = np.mean(loss_batch, axis=1)
         losses[:, 0][:size] = loss_batch
         objective_epoch.append(loss)
     return objective_epoch, losses
 
 
-if args.dataset == 'mnist':
-    model = MNIST_Net()
-elif args.dataset == 'cifar':
-    model = CIFAR_Net()
-elif args.dataset == 'sine':
-    model = Sequence()
+# if args.dataset == 'mnist':
+    # model = MNIST_Net()
+# elif args.dataset == 'cifar':
+    # model = CIFAR_Net()
 
-if args.cuda:
-    model.cuda()
+# if args.cuda:
+    # model.cuda()
 
-x_train, y_train, x_test, y_test = load_dataset(args.dataset)
+x_train, y_train, x_test, y_test, x_val, y_val = load_dataset(args.dataset)
 n = x_train.shape[0]
 x_train = x_train[:n]
 y_train = y_train[:n]
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
+if args.cross_val is True:
+    batch_size = [16, 32, 64, 128]
+    lr = np.logspace(-5, -2, 10)
+    for val in batch_size:
+        args.batch_size = val
+        print('Cross Val for '+str(val))
+        f = open('batch/fc'+str(args.dataset)+'_'+str(args.sample_type)+'_'+str(val)+'.train.log', 'w')
+        ff = open('batch/fc'+str(args.dataset)+'_'+str(args.sample_type)+'_'+str(val)+'.val.log', 'w')
+        fff = open('batch/fc'+str(args.dataset)+'_'+str(args.sample_type)+'_'+str(val)+'.test.log', 'w')
+        train_vals = []
+        test_vals = []
+        val_vals = []
+        if args.dataset == 'mnist':
+            model = MNIST_Net()
+        elif args.dataset == 'cifar':
+            model = CIFAR_Net()
+        if args.cuda:
+            model.cuda()
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        if args.sample_type == 'grad':
+            for epoch in np.arange(3):
+                uniform_sampling(x_train, y_train)
+                test_vals.append(test(x_test, y_test))
+                val_vals.append(test(x_val, y_val))
+                train_vals.append(test(x_train, y_train))
+            weights = gradients(x_train, y_train)
+            weights = weights.reshape(weights.shape[0], 1)
+            weights = np.column_stack([weights, range(weights.shape[0])])
+            prob = args.batch_size * (weights[:, 0] / np.sum(weights[:, 0]))
+            for epoch in np.arange(args.epochs-3):
+                gradient_sampling(x_train, y_train, prob)
+                test_vals.append(test(x_test, y_test))
+                val_vals.append(test(x_val, y_val))
+                train_vals.append(test(x_train, y_train))
+        elif args.sample_type == 'obj':
+            loss, losses = train(x_train, y_train, ret_all_losses=True)
+            losses = losses.reshape(losses.shape[0], 1)
+            losses = np.column_stack([losses, range(losses.shape[0])])
+            test_vals.append(test(x_test, y_test))
+            val_vals.append(test(x_val, y_val))
+            train_vals.append(test(x_train, y_train))
+            for epoch in np.arange(args.epochs-1):
+                objective_epoch, losses = objective_sampling(x_train, y_train, losses)
+                test_vals.append(test(x_test, y_test))
+                val_vals.append(test(x_val, y_val))
+                train_vals.append(test(x_train, y_train))
+        elif args.sample_type == 'var':
+            x_train_var = np.var(x_train.reshape(x_train.shape[0], reshape_size), axis=1)
+            prob = args.batch_size * (x_train_var / np.sum(x_train_var))
+            for epoch in np.arange(args.epochs):
+                variance_sampling(x_train, y_train, prob)
+                test_vals.append(test(x_test, y_test))
+                val_vals.append(test(x_val, y_val))
+                train_vals.append(test(x_train, y_train))
+        elif args.sample_type == 'uni':
+            for epoch in np.arange(args.epochs):
+                uniform_sampling(x_train, y_train)
+                test_vals.append(test(x_test, y_test))
+                val_vals.append(test(x_val, y_val))
+                train_vals.append(test(x_train, y_train))
+        ff.write(str(val_vals))
+        f.write(str(train_vals))
+        fff.write(str(test_vals))
+    sys.exit()
+
+
 
 if args.sample_type == 'grad':
     for epoch in np.arange(3):
         uniform_sampling(x_train, y_train)
         test(x_test, y_test)
     weights = gradients(x_train, y_train)
-    print(weights.shape)
     weights = weights.reshape(weights.shape[0], 1)
     weights = np.column_stack([weights, range(weights.shape[0])])
     prob = args.batch_size * (weights[:, 0] / np.sum(weights[:, 0]))
@@ -389,15 +399,13 @@ if args.sample_type == 'grad':
         test(x_test, y_test)
 elif args.sample_type == 'obj':
     loss, losses = train(x_train, y_train, ret_all_losses=True)
-    losses = np.mean(losses, axis=1)
-    # losses = losses.reshape(losses.shape[0], 1)
+    losses = losses.reshape(losses.shape[0], 1)
     losses = np.column_stack([losses, range(losses.shape[0])])
     for epoch in np.arange(args.epochs-1):
         objective_epoch, losses = objective_sampling(x_train, y_train, losses)
         test(x_test, y_test)
 elif args.sample_type == 'var':
-    # x_train_var = np.var(x_train.reshape(x_train.shape[0], reshape_size), axis=1)
-    x_train_var = np.var(x_train, axis=1)
+    x_train_var = np.var(x_train.reshape(x_train.shape[0], reshape_size), axis=1)
     prob = args.batch_size * (x_train_var / np.sum(x_train_var))
     for epoch in np.arange(args.epochs):
         variance_sampling(x_train, y_train, prob)
